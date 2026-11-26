@@ -8,14 +8,14 @@ on:
     branches:
       - main
     paths:
-      - 'NexoraAI-starter.zip'
+      - 'NexoraAI.zip'
       - '.github/workflows/android-build.yml'
 
 permissions:
   contents: read
 
 concurrency:
-  group: nexora-android-build
+  group: nexora-cloud-build
   cancel-in-progress: true
 
 jobs:
@@ -28,37 +28,36 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Verify Project ZIP
-        shell: bash
+      - name: Verify ZIP
         run: |
           set -euo pipefail
 
-          if [ ! -f "NexoraAI-starter.zip" ]; then
-            echo "::error::NexoraAI-starter.zip not found!"
+          if [ ! -f NexoraAI.zip ]; then
+            echo "::error::NexoraAI.zip not found"
             exit 1
           fi
 
-          echo "Project ZIP found."
-          unzip -t NexoraAI-starter.zip
+          unzip -t NexoraAI.zip
+          ls -lh NexoraAI.zip
 
-      - name: Setup Java 17
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Extract Android Project
-        shell: bash
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Extract Project
         run: |
           set -euo pipefail
-
           mkdir -p extracted
-          unzip -q NexoraAI-starter.zip -d extracted
+          unzip -q NexoraAI.zip -d extracted
+          echo "Project extracted."
 
-          echo "Project extracted successfully."
-
-      - name: Detect Android Gradle Project
-        id: detect
+      - name: Detect Gradle Project
+        id: project
         shell: bash
         run: |
           set -euo pipefail
@@ -68,97 +67,91 @@ jobs:
             -print -quit)
 
           if [ -z "$SETTINGS" ]; then
-            echo "::error::Android Gradle settings file not found."
-            echo "Extracted files:"
-            find extracted -maxdepth 4 -type f | head -100
+            echo "::error::settings.gradle not found."
+            find extracted -maxdepth 5 -type f | head -100
             exit 1
           fi
 
-          PROJECT_DIR="${SETTINGS%/*}"
+          ROOT="${SETTINGS%/*}"
+          PROPS="$ROOT/gradle/wrapper/gradle-wrapper.properties"
+          WRAPPER="$ROOT/gradlew"
+          JAR="$ROOT/gradle/wrapper/gradle-wrapper.jar"
 
-          if [ ! -f "$PROJECT_DIR/build.gradle" ] && \
-             [ ! -f "$PROJECT_DIR/build.gradle.kts" ]; then
-            echo "::error::Root build.gradle file not found."
+          if [ ! -f "$ROOT/build.gradle" ] && \
+             [ ! -f "$ROOT/build.gradle.kts" ]; then
+            echo "::error::Root build.gradle not found."
             exit 1
           fi
-
-          PROPS="$PROJECT_DIR/gradle/wrapper/gradle-wrapper.properties"
-          WRAPPER="$PROJECT_DIR/gradlew"
-          WRAPPER_JAR="$PROJECT_DIR/gradle/wrapper/gradle-wrapper.jar"
 
           if [ ! -f "$PROPS" ]; then
-            echo "::error::gradle-wrapper.properties is missing."
+            echo "::error::Gradle wrapper properties missing."
             exit 1
           fi
 
           VERSION=$(sed -nE \
-            's#.*gradle-([0-9]+(\.[0-9]+)*)-(bin|all)\.zip.*#\1#p' \
+            's/.*gradle-([0-9]+(\.[0-9]+)*)-(bin|all)\.zip.*/\1/p' \
             "$PROPS" | head -1)
 
           if [ -z "$VERSION" ]; then
-            echo "::error::Could not detect Gradle version."
+            echo "::error::Unable to detect Gradle version."
             exit 1
           fi
 
           USE_WRAPPER=false
 
-          if [ -f "$WRAPPER" ] && [ -f "$WRAPPER_JAR" ]; then
+          if [ -f "$WRAPPER" ] && [ -f "$JAR" ]; then
             chmod +x "$WRAPPER"
             USE_WRAPPER=true
           fi
 
-          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-          echo "gradle_version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "use_wrapper=$USE_WRAPPER" >> "$GITHUB_OUTPUT"
+          echo "root=$ROOT" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "wrapper=$USE_WRAPPER" >> "$GITHUB_OUTPUT"
 
-          echo "Project: $PROJECT_DIR"
+          echo "Project: $ROOT"
           echo "Gradle: $VERSION"
-          echo "Wrapper available: $USE_WRAPPER"
+          echo "Wrapper: $USE_WRAPPER"
 
       - name: Setup Gradle
-        if: steps.detect.outputs.use_wrapper != 'true'
-        uses: gradle/actions/setup-gradle@v6
+        if: steps.project.outputs.wrapper != 'true'
+        uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: ${{ steps.detect.outputs.gradle_version }}
+          gradle-version: ${{ steps.project.outputs.version }}
 
       - name: Build Debug APK
-        working-directory: ${{ steps.detect.outputs.project_dir }}
+        working-directory: ${{ steps.project.outputs.root }}
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Starting NEXORA AI APK build..."
-
-          if [ "${{ steps.detect.outputs.use_wrapper }}" = "true" ]; then
-            bash ./gradlew assembleDebug --no-daemon --stacktrace
+          if [ "${{ steps.project.outputs.wrapper }}" = "true" ]; then
+            ./gradlew assembleDebug --no-daemon --stacktrace
           else
             gradle assembleDebug --no-daemon --stacktrace
           fi
 
-          echo "APK build completed."
-
-      - name: Verify APK
+      - name: Collect APK
         shell: bash
         run: |
           set -euo pipefail
 
-          APK_COUNT=$(find extracted -type f \
-            -path '*/build/outputs/apk/debug/*.apk' | wc -l)
+          mkdir -p artifacts
 
-          if [ "$APK_COUNT" -eq 0 ]; then
-            echo "::error::No Debug APK was generated."
+          find extracted -type f \
+            -path '*/build/outputs/apk/debug/*.apk' \
+            -exec cp {} artifacts/ \;
+
+          if ! find artifacts -name '*.apk' | grep -q .; then
+            echo "::error::No APK generated."
             exit 1
           fi
 
-          echo "Found $APK_COUNT APK file(s)."
-          find extracted -type f \
-            -path '*/build/outputs/apk/debug/*.apk' \
-            -exec ls -lh {} \;
+          ls -lh artifacts/
 
-      - name: Upload NEXORA AI APK
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: NEXORA-AI-APK
-          path: extracted/**/build/outputs/apk/debug/*.apk
+          path: artifacts/*.apk
           if-no-files-found: error
           retention-days: 7
