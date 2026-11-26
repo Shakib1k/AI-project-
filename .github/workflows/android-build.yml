@@ -1,9 +1,7 @@
-
 name: NEXORA AI - Cloud APK Build
 
 on:
   workflow_dispatch:
-
   push:
     branches:
       - main
@@ -31,12 +29,10 @@ jobs:
       - name: Verify ZIP
         run: |
           set -euo pipefail
-
           if [ ! -f NexoraAI.zip ]; then
             echo "::error::NexoraAI.zip not found"
             exit 1
           fi
-
           unzip -t NexoraAI.zip
           ls -lh NexoraAI.zip
 
@@ -61,44 +57,37 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
-          SETTINGS=$(find extracted -type f \
-            \( -name settings.gradle -o -name settings.gradle.kts \) \
-            -print -quit)
-
+          # 查找 settings.gradle，以确定项目根目录
+          SETTINGS=$(find extracted -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)
           if [ -z "$SETTINGS" ]; then
             echo "::error::settings.gradle not found."
             find extracted -maxdepth 5 -type f | head -100
             exit 1
           fi
-
           ROOT="${SETTINGS%/*}"
+          
+          # 检查与 settings.gradle 同级的 build.gradle
+          if [ ! -f "$ROOT/build.gradle" ] && [ ! -f "$ROOT/build.gradle.kts" ]; then
+            echo "::error::Root build.gradle not found alongside settings.gradle."
+            exit 1
+          fi
+
           PROPS="$ROOT/gradle/wrapper/gradle-wrapper.properties"
           WRAPPER="$ROOT/gradlew"
           JAR="$ROOT/gradle/wrapper/gradle-wrapper.jar"
 
-          if [ ! -f "$ROOT/build.gradle" ] && \
-             [ ! -f "$ROOT/build.gradle.kts" ]; then
-            echo "::error::Root build.gradle not found."
-            exit 1
-          fi
-
           if [ ! -f "$PROPS" ]; then
-            echo "::error::Gradle wrapper properties missing."
+            echo "::error::Gradle wrapper properties missing at $PROPS"
             exit 1
           fi
 
-          VERSION=$(sed -nE \
-            's/.*gradle-([0-9]+(\.[0-9]+)*)-(bin|all)\.zip.*/\1/p' \
-            "$PROPS" | head -1)
-
+          VERSION=$(sed -nE 's/.*gradle-([0-9]+(\.[0-9]+)*)-(bin|all)\.zip.*/\1/p' "$PROPS" | head -1)
           if [ -z "$VERSION" ]; then
             echo "::error::Unable to detect Gradle version."
             exit 1
           fi
 
           USE_WRAPPER=false
-
           if [ -f "$WRAPPER" ] && [ -f "$JAR" ]; then
             chmod +x "$WRAPPER"
             USE_WRAPPER=true
@@ -108,9 +97,9 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "wrapper=$USE_WRAPPER" >> "$GITHUB_OUTPUT"
 
-          echo "Project: $ROOT"
-          echo "Gradle: $VERSION"
-          echo "Wrapper: $USE_WRAPPER"
+          echo "Project Root: $ROOT"
+          echo "Gradle Version: $VERSION"
+          echo "Use Wrapper: $USE_WRAPPER"
 
       - name: Setup Gradle
         if: steps.project.outputs.wrapper != 'true'
@@ -123,7 +112,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           if [ "${{ steps.project.outputs.wrapper }}" = "true" ]; then
             ./gradlew assembleDebug --no-daemon --stacktrace
           else
@@ -134,18 +122,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           mkdir -p artifacts
-
-          find extracted -type f \
-            -path '*/build/outputs/apk/debug/*.apk' \
-            -exec cp {} artifacts/ \;
-
+          find extracted -type f -path '*/build/outputs/apk/debug/*.apk' -exec cp {} artifacts/ \;
           if ! find artifacts -name '*.apk' | grep -q .; then
             echo "::error::No APK generated."
             exit 1
           fi
-
           ls -lh artifacts/
 
       - name: Upload APK Artifact
