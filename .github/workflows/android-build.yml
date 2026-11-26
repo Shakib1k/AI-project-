@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Java
@@ -22,24 +22,47 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Gradle Cache
-        uses: gradle/actions/setup-gradle@v6
-
-      - name: Extract Android Project
+      - name: Extract Project
         run: |
           unzip -q NexoraAI.zip -d extracted
 
-      - name: Build APK
+      - name: Detect Gradle Version
+        id: detect
         run: |
-          WRAPPER=$(find extracted -type f -name gradlew -print -quit)
-          if [ -z "$WRAPPER" ]; then
-            echo "ERROR: Gradle wrapper not found in ZIP"
+          SETTINGS=$(find extracted -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERROR: settings.gradle not found"
             exit 1
           fi
-          PROJECT_DIR="${WRAPPER%/gradlew}"
-          cd "$PROJECT_DIR"
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+
+          PROJECT_DIR="${SETTINGS%/*}"
+          PROPS="$PROJECT_DIR/gradle/wrapper/gradle-wrapper.properties"
+
+          if [ ! -f "$PROPS" ]; then
+            echo "ERROR: Gradle wrapper properties missing"
+            exit 1
+          fi
+
+          VERSION=$(grep -oE 'gradle-[0-9]+(\.[0-9]+)*-(bin|all)\.zip' "$PROPS" | head -n 1 | sed -E 's/gradle-//; s/-(bin|all)\.zip//')
+
+          if [ -z "$VERSION" ]; then
+            echo "ERROR: Gradle version not found"
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Install Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: ${{ steps.detect.outputs.version }}
+
+      - name: Build Debug APK
+        working-directory: ${{ steps.detect.outputs.project_dir }}
+        run: |
+          gradle assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
