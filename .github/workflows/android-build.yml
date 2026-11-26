@@ -24,7 +24,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5  # 升级：适配 Node 24 运行时[reference:4]
 
       - name: Verify ZIP
         run: |
@@ -37,7 +37,7 @@ jobs:
           ls -lh NexoraAI.zip
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5  # 升级：解决 v4 废弃警告，适配 Node 24[reference:5]
         with:
           distribution: temurin
           java-version: '17'
@@ -57,7 +57,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # 查找 settings.gradle，以确定项目根目录
           SETTINGS=$(find extracted -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)
           if [ -z "$SETTINGS" ]; then
             echo "::error::settings.gradle not found."
@@ -66,7 +65,6 @@ jobs:
           fi
           ROOT="${SETTINGS%/*}"
           
-          # 检查与 settings.gradle 同级的 build.gradle
           if [ ! -f "$ROOT/build.gradle" ] && [ ! -f "$ROOT/build.gradle.kts" ]; then
             echo "::error::Root build.gradle not found alongside settings.gradle."
             exit 1
