@@ -1,0 +1,50 @@
+
+name: NEXORA AI - Cloud APK Build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'NexoraAI.zip'
+      - '.github/workflows/android-build.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle Cache
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Extract Android Project
+        run: |
+          unzip -q NexoraAI.zip -d extracted
+
+      - name: Build APK
+        run: |
+          WRAPPER=$(find extracted -type f -name gradlew -print -quit)
+          if [ -z "$WRAPPER" ]; then
+            echo "ERROR: Gradle wrapper not found in ZIP"
+            exit 1
+          fi
+          PROJECT_DIR="${WRAPPER%/gradlew}"
+          cd "$PROJECT_DIR"
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NEXORA-AI-APK
+          path: extracted/**/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 3
