@@ -6,7 +6,7 @@ on:
     branches:
       - main
     paths:
-      - 'NexoraAI-starter.zip'
+      - 'NexoraAI.zip'
       - '.github/workflows/android-build.yml'
 
 permissions:
@@ -24,18 +24,18 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Verify Project ZIP
         shell: bash
         run: |
           set -euo pipefail
-          if [ ! -f "NexoraAI-starter.zip" ]; then
-            echo "::error::NexoraAI-starter.zip not found!"
+          if [ ! -f "NexoraAI.zip" ]; then
+            echo "::error::NexoraAI.zip not found!"
             exit 1
           fi
           echo "Project ZIP found."
-          unzip -t NexoraAI-starter.zip
+          unzip -t NexoraAI.zip
 
       - name: Setup Java 17
         uses: actions/setup-java@v5
@@ -48,7 +48,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p extracted
-          unzip -q NexoraAI-starter.zip -d extracted
+          unzip -q NexoraAI.zip -d extracted
           echo "Project extracted successfully."
 
       - name: Detect Android Gradle Project
@@ -99,7 +99,7 @@ jobs:
 
       - name: Setup Gradle
         if: steps.detect.outputs.use_wrapper != 'true'
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: ${{ steps.detect.outputs.gradle_version }}
 
@@ -132,7 +132,7 @@ jobs:
             -exec ls -lh {} \;
 
       - name: Upload NEXORA AI APK
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: NEXORA-AI-APK
           path: extracted/**/build/outputs/apk/debug/*.apk
