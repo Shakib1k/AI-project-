@@ -43,6 +43,10 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # 👇 অ্যান্ড্রয়েড SDK সেটআপ (এটি ছাড়া APK তৈরি হবে না)
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Extract Android Project
         shell: bash
         run: |
@@ -50,6 +54,13 @@ jobs:
           mkdir -p extracted
           unzip -q NexoraAI.zip -d extracted
           echo "Project extracted successfully."
+
+      # 👇 জিপ ফাইলের ভেতরে কী আছে তা দেখার জন্য
+      - name: List Extracted Files (Debug)
+        shell: bash
+        run: |
+          echo "=== Files inside extracted folder ==="
+          find extracted -maxdepth 3 -type f | head -50
 
       - name: Detect Android Gradle Project
         id: detect
@@ -59,37 +70,43 @@ jobs:
           SETTINGS=$(find extracted -type f \
             \( -name settings.gradle -o -name settings.gradle.kts \) \
             -print -quit)
+          
           if [ -z "$SETTINGS" ]; then
             echo "::error::Android Gradle settings file not found."
             echo "Extracted files:"
             find extracted -maxdepth 4 -type f | head -100
             exit 1
           fi
+          
           PROJECT_DIR="${SETTINGS%/*}"
-          if [ ! -f "$PROJECT_DIR/build.gradle" ] && \
-             [ ! -f "$PROJECT_DIR/build.gradle.kts" ]; then
+          
+          if [ ! -f "$PROJECT_DIR/build.gradle" ] && [ ! -f "$PROJECT_DIR/build.gradle.kts" ]; then
             echo "::error::Root build.gradle file not found."
             exit 1
           fi
+          
           PROPS="$PROJECT_DIR/gradle/wrapper/gradle-wrapper.properties"
           WRAPPER="$PROJECT_DIR/gradlew"
           WRAPPER_JAR="$PROJECT_DIR/gradle/wrapper/gradle-wrapper.jar"
-          if [ ! -f "$PROPS" ]; then
-            echo "::error::gradle-wrapper.properties is missing."
-            exit 1
-          fi
-          VERSION=$(sed -nE \
-            's#.*gradle-([0-9]+(\.[0-9]+)*)-(bin|all)\.zip.*#\1#p' \
-            "$PROPS" | head -1)
-          if [ -z "$VERSION" ]; then
-            echo "::error::Could not detect Gradle version."
-            exit 1
-          fi
+          
+          # ডিফল্ট গ্রেডল ভার্সন (যদি র‍্যাপার ফাইল না থাকে)
+          VERSION="8.2" 
           USE_WRAPPER=false
+          
+          if [ -f "$PROPS" ]; then
+            DETECTED_VERSION=$(sed -nE \
+              's#.*gradle-([0-9]+(\.[0-9]+)*)-(bin|all)\.zip.*#\1#p' \
+              "$PROPS" | head -1)
+            if [ -n "$DETECTED_VERSION" ]; then
+              VERSION="$DETECTED_VERSION"
+            fi
+          fi
+
           if [ -f "$WRAPPER" ] && [ -f "$WRAPPER_JAR" ]; then
             chmod +x "$WRAPPER"
             USE_WRAPPER=true
           fi
+          
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
           echo "gradle_version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "use_wrapper=$USE_WRAPPER" >> "$GITHUB_OUTPUT"
